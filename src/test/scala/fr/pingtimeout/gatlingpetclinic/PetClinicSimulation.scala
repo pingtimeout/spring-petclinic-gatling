@@ -1,12 +1,17 @@
 package fr.pingtimeout.gatlingpetclinic
 
+import com.typesafe.scalalogging.StrictLogging
 import io.gatling.core.Predef._
+import io.gatling.commons.validation._
+import io.gatling.core.session.Expression
 import io.gatling.http.Predef._
 
 import scala.util.Random
 
 class PetClinicSimulation extends Simulation {
   private val randomSource = RandomSource()
+  private val randomParameters = RandomParameters(randomSource)
+
   private val httpProtocol = http
     .baseUrl("http://localhost:8080/")
     .acceptHeader("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -26,11 +31,11 @@ class PetClinicSimulation extends Simulation {
 
     .exec(http("Create an owner")
       .post("/owners/new")
-      .formParam("firstName", randomSource.random.nextString(10) + " " + randomSource.random.nextString(10))
-      .formParam("lastName", randomSource.random.nextString(15))
-      .formParam("address", randomSource.random.nextString(50))
-      .formParam("city", randomSource.random.nextString(20))
-      .formParam("telephone", randomSource.nextNumericString(10)))
+      .formParam("firstName", randomParameters.fromScalaRandom(r => r.nextString(10) + " " + r.nextString(10)))
+      .formParam("lastName", randomParameters.fromScalaRandom(_.nextString(15)))
+      .formParam("address", randomParameters.fromScalaRandom(_.nextString(50)))
+      .formParam("city", randomParameters.fromScalaRandom(_.nextString(20)))
+      .formParam("telephone", randomParameters.nextNumericString(10)))
 
     .exec(http("Go to find owners page")
       .get("/owners/find"))
@@ -50,9 +55,9 @@ class PetClinicSimulation extends Simulation {
 
     .exec(http("Create a new pet")
       .post("/owners/${ownerId}/pets/new")
-      .formParam("name", randomSource.random.nextString(5))
-      .formParam("birthDate", randomSource.nextDate())
-      .formParam("type", randomSource.nextElement(Seq("bird", "cat", "dog", "hamster", "lizard", "snake"))))
+      .formParam("name", randomParameters.fromScalaRandom(_.nextString(5)))
+      .formParam("birthDate", randomParameters.nextDate())
+      .formParam("type", randomParameters.nextElement(Seq("bird", "cat", "dog", "hamster", "lizard", "snake"))))
 
     .exec(http("Go to owner page")
       .get("/owners/${ownerId}")
@@ -66,8 +71,8 @@ class PetClinicSimulation extends Simulation {
 
     .exec(http("Create a new visit for pet ${petId}")
       .post("/owners/${ownerId}/pets/${petId}/visits/new")
-      .formParam("date", randomSource.nextDate())
-      .formParam("description", randomSource.random.nextString(50))
+      .formParam("date", randomParameters.nextDate())
+      .formParam("description", randomParameters.fromScalaRandom(_.nextString(50)))
       .formParam("petId", "${petId}"))
 
   setUp(scn.inject(atOnceUsers(2)).protocols(httpProtocol))
@@ -91,4 +96,14 @@ case class RandomSource(seed: Long = System.currentTimeMillis()) {
 
   def nextElement[E](list: Seq[E]): E =
     list(random.nextInt(list.size))
+}
+
+case class RandomParameters(randomSource: RandomSource) extends StrictLogging {
+  def nextDate(): Expression[String] = _ => randomSource.nextDate().success
+
+  def nextNumericString(length: Int): Expression[String] = _ => randomSource.nextNumericString(length).success
+
+  def nextElement[E](list: Seq[E]): Expression[E] = _ => randomSource.nextElement(list).success
+
+  def fromScalaRandom(generator: Random => Any): Expression[Any] = _ => generator.apply(randomSource.random).success
 }
